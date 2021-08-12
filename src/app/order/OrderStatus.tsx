@@ -1,9 +1,21 @@
+// Should be in own file: OrderStatus/OrderStatus.tsx
+// and the only export of: OrderStatus/index.ts
 import { Order } from '@bigcommerce/checkout-sdk';
-import React, { memo, useCallback, FunctionComponent } from 'react';
+import React, { memo, FunctionComponent } from 'react';
 
 import { TranslatedHtml, TranslatedString } from '../locale';
 
 import OrderConfirmationSection from './OrderConfirmationSection';
+
+const SEPA_METHOD = 'SEPA Direct Debit (via Checkout.com)';
+const TEXT_ONLY_METHODS = [SEPA_METHOD];
+const MANDATES_MAP: Record<string, string> = {
+    'Stripe (SEPA)': 'sepa_link_text',
+    'OXXO (via Checkout.com)': 'oxxo_link_text',
+    'Boleto Bancário (via Checkout.com)': 'boleto_link_text',
+    [SEPA_METHOD]: 'mandate_text_only',
+    default: 'mandate_link_text',
+};
 
 export interface OrderStatusProps {
     supportEmail: string;
@@ -11,51 +23,17 @@ export interface OrderStatusProps {
     order: Order;
 }
 
-const checkoutcomSEPAMethod = 'SEPA Direct Debit (via Checkout.com)';
-
 const OrderStatus: FunctionComponent<OrderStatusProps> = ({
     order,
     supportEmail,
     supportPhoneNumber,
 }) => {
-
-    const getMandateProvider = useCallback(() => {
-        return order?.payments?.[0].description;
-    }, [order]);
-
-    const getMandateTextId = useCallback(() => {
-        const Mandates = [
-            { method: 'Stripe (SEPA)', value: 'sepa_link_text' },
-            { method: 'OXXO (via Checkout.com)', value: 'oxxo_link_text' },
-            { method: 'Boleto Bancário (via Checkout.com)', value: 'boleto_link_text' },
-            { method: checkoutcomSEPAMethod, value: 'mandate_text_only' },
-        ];
-
-        const mandateText = Mandates.find(pair => pair.method === order?.payments?.[0].description);
-
-        return mandateText ? mandateText.value : 'mandate_link_text';
-    }, [order]);
-
-    const showMandateAsTextOnly = useCallback(() => {
-        const textOnlyMethods = [checkoutcomSEPAMethod];
-
-        const paymentDescription = order?.payments?.[0].description;
-
-        if (!paymentDescription) {
-            return false;
-        }
-
-        return textOnlyMethods.includes(paymentDescription);
-    }, [order]);
+    const mandateProvider = `${order?.payments?.[0].description}`;
+    const mandateTextId = MANDATES_MAP[mandateProvider] || MANDATES_MAP.default;
+    const showMandateAsTextOnly = TEXT_ONLY_METHODS.includes(mandateProvider);
 
     return <OrderConfirmationSection>
-        { order.orderId &&
-        <p data-test="order-confirmation-order-number-text">
-            <TranslatedHtml
-                data={ { orderNumber: order.orderId } }
-                id="order_confirmation.order_number_text"
-            />
-        </p> }
+        <OrderNumber orderNumber={ order.orderId } />
 
         <p data-test="order-confirmation-order-status-text">
             <OrderStatusMessage
@@ -66,32 +44,17 @@ const OrderStatus: FunctionComponent<OrderStatusProps> = ({
             />
         </p>
 
-        { showMandateAsTextOnly() ?
-            <div data-test="order-confirmation-mandate-text-only">
-                <br />
-                <TranslatedString
-                    data={ { provider : getMandateProvider(), mandate: order.mandateUrl } }
-                    id={ 'order_confirmation.' + getMandateTextId() }
-                />
-            </div> :
-            order.mandateUrl && <a data-test="order-confirmation-mandate-link-text" href={ order.mandateUrl } rel="noopener noreferrer" target="_blank">
-                <TranslatedString
-                    data={ { provider : getMandateProvider() } }
-                    id={ 'order_confirmation.' + getMandateTextId() }
-                />
-            </a> }
+        { showMandateAsTextOnly || !order.mandateUrl ?
+            <MandateText id={ mandateTextId } mandate={ order.mandateUrl } provider={ mandateProvider } /> :
+            <MandateLink id={ mandateTextId } mandate={ order.mandateUrl } provider={ mandateProvider } /> }
 
-        { order.hasDigitalItems &&
-        <p data-test="order-confirmation-digital-items-text">
-            <TranslatedHtml
-                id={ order.isDownloadable ?
-                    'order_confirmation.order_with_downloadable_digital_items_text' :
-                    'order_confirmation.order_without_downloadable_digital_items_text' }
-            />
-        </p> }
+        { order.hasDigitalItems && <DigitalItems downloadable={ order.isDownloadable } /> }
     </OrderConfirmationSection>;
 };
 
+export default memo(OrderStatus);
+
+// Should be in own file: OrderStatus/OrderStatusMessage.tsx
 interface OrderStatusMessageProps {
     orderNumber: number;
     orderStatus: string;
@@ -134,4 +97,52 @@ const OrderStatusMessage: FunctionComponent<OrderStatusMessageProps> = ({
     }
 };
 
-export default memo(OrderStatus);
+// Should be in own file: OrderStatus/OrderNumber.tsx
+interface OrderNumberProps { orderNumber: number; }
+
+const OrderNumber = ({ orderNumber }: OrderNumberProps) => (
+    <p data-test="order-confirmation-order-number-text">
+        <TranslatedHtml
+            data={ { orderNumber } }
+            id="order_confirmation.order_number_text"
+        />
+    </p>
+);
+
+// Should be in own file: OrderStatus/MandateText.tsx
+interface MandateTextProps { provider: string; mandate?: string; id: string; }
+
+const MandateText = ({ provider, mandate = '', id }: MandateTextProps) => (
+    <div data-test="order-confirmation-mandate-text-only">
+        <br />
+        <TranslatedString
+            data={ { provider, mandate } }
+            id={ 'order_confirmation.' + id }
+        />
+    </div>
+);
+
+// Should be in own file: OrderStatus/MandateLink.tsx
+interface MandateLinkProps { provider: string; mandate: string; id: string; }
+
+const MandateLink = ({ provider, mandate, id }: MandateLinkProps) => (
+    <a data-test="order-confirmation-mandate-link-text" href={ mandate } rel="noopener noreferrer" target="_blank">
+        <TranslatedString
+            data={ { provider } }
+            id={ 'order_confirmation.' + id }
+        />
+    </a>
+);
+
+// Should be in own file: OrderStatus/DigitalItems.tsx
+interface DigitalItemsProps { downloadable: boolean; }
+
+const DigitalItems = ({ downloadable }: DigitalItemsProps) => (
+    <p data-test="order-confirmation-digital-items-text">
+        <TranslatedHtml
+            id={ downloadable ?
+                'order_confirmation.order_with_downloadable_digital_items_text' :
+                'order_confirmation.order_without_downloadable_digital_items_text' }
+        />
+    </p>
+);
